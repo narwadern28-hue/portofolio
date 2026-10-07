@@ -1,21 +1,59 @@
-import { useState, FormEvent } from "react";
+import { useState, useRef, FormEvent } from "react";
 import { useCurrency } from "../utils/CurrencyContext";
 import Reveal from "../components/Reveal";
 import { SectionHeading } from "../components/ui";
 import { Mail, CheckCircle2, Send, Loader2, Sparkles } from "lucide-react";
 
+const FAILURE_MESSAGE =
+  "Something went wrong. Please try again or email webdesigner.rn@gmail.com.";
+
 export default function Contact() {
   const { currentCurrency } = useCurrency();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    // Basic protection against accidental duplicate submissions.
+    if (loading) return;
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError(null);
+
+    const form = e.currentTarget;
+    const data = new FormData(form);
+
+    const payload = {
+      name: String(data.get("name") || "").trim(),
+      email: String(data.get("email") || "").trim(),
+      businessName: String(data.get("businessName") || "").trim(),
+      websiteType: String(data.get("websiteType") || ""),
+      budget: String(data.get("budget") || ""),
+      details: String(data.get("details") || "").trim(),
+      // Honeypot (always empty for real users; bots may fill it).
+      company_website: String(data.get("company_website") || ""),
+    };
+
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+      } | null;
+      if (!res.ok || !json || json.ok !== true) {
+        throw new Error("send_failed");
+      }
+      form.reset();
       setSuccess(true);
-    }, 1200);
+    } catch {
+      setError(FAILURE_MESSAGE);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const baseAmount = `${currentCurrency.symbol}${currentCurrency.amount}+`;
@@ -33,12 +71,11 @@ export default function Contact() {
                   <CheckCircle2 className="h-8 w-8" />
                 </div>
                 <h3 className="font-display text-2xl font-bold tracking-tight text-white uppercase">
-                  Enquiry Received!
+                  Project Enquiry Sent
                 </h3>
                 <p className="mx-auto mt-4 max-w-md text-sm leading-relaxed text-mist">
-                  Thank you for reaching out. Alex will review your project
-                  requirements and connect via email (usually within 1 working
-                  day).
+                  Thanks for reaching out. I’ll review your project details
+                  and get back to you.
                 </p>
                 <button
                   type="button"
@@ -49,7 +86,23 @@ export default function Contact() {
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="grid gap-6">
+              <form
+                ref={formRef}
+                onSubmit={handleSubmit}
+                className="grid gap-6"
+                noValidate={false}
+              >
+                {/* Honeypot field for bots — invisible to real visitors. */}
+                <div className="hidden" aria-hidden="true">
+                  <input
+                    type="text"
+                    name="company_website"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    defaultValue=""
+                  />
+                </div>
+
                 <div className="grid gap-6 sm:grid-cols-2">
                   <div>
                     <label
@@ -60,8 +113,11 @@ export default function Contact() {
                     </label>
                     <input
                       id="name"
+                      name="name"
                       required
                       type="text"
+                      maxLength={100}
+                      autoComplete="name"
                       placeholder="Your name"
                       className="w-full rounded-lg border border-white/10 bg-coal/50 px-4 py-3.5 text-sm text-white placeholder:text-white/30 transition-colors focus:border-accent focus:outline-none"
                     />
@@ -75,8 +131,11 @@ export default function Contact() {
                     </label>
                     <input
                       id="email"
+                      name="email"
                       required
                       type="email"
+                      maxLength={254}
+                      autoComplete="email"
                       placeholder="you@email.com"
                       className="w-full rounded-lg border border-white/10 bg-coal/50 px-4 py-3.5 text-sm text-white placeholder:text-white/30 transition-colors focus:border-accent focus:outline-none"
                     />
@@ -89,11 +148,15 @@ export default function Contact() {
                       htmlFor="biz-name"
                       className="mb-2 block font-display text-[10px] font-bold tracking-widest text-mist uppercase"
                     >
-                      Business Name
+                      Business Name *
                     </label>
                     <input
                       id="biz-name"
+                      name="businessName"
+                      required
                       type="text"
+                      maxLength={160}
+                      autoComplete="organization"
                       placeholder="Your company name"
                       className="w-full rounded-lg border border-white/10 bg-coal/50 px-4 py-3.5 text-sm text-white placeholder:text-white/30 transition-colors focus:border-accent focus:outline-none"
                     />
@@ -103,10 +166,12 @@ export default function Contact() {
                       htmlFor="web-type"
                       className="mb-2 block font-display text-[10px] font-bold tracking-widest text-mist uppercase"
                     >
-                      Website Type
+                      Website Type *
                     </label>
                     <select
                       id="web-type"
+                      name="websiteType"
+                      required
                       defaultValue=""
                       className="w-full rounded-lg border border-white/10 bg-coal/50 px-4 py-3.5 text-sm text-white transition-colors focus:border-accent focus:outline-none"
                     >
@@ -131,6 +196,7 @@ export default function Contact() {
                   </label>
                   <select
                     id="budget"
+                    name="budget"
                     defaultValue=""
                     className="w-full rounded-lg border border-white/10 bg-coal/50 px-4 py-3.5 text-sm text-white transition-colors focus:border-accent focus:outline-none"
                   >
@@ -154,12 +220,24 @@ export default function Contact() {
                   </label>
                   <textarea
                     id="details"
+                    name="details"
                     required
+                    minLength={10}
+                    maxLength={5000}
                     rows={6}
                     placeholder="Tell me about your business and what you want your website to achieve..."
                     className="w-full resize-none rounded-lg border border-white/10 bg-coal/50 px-4 py-3.5 text-sm text-white placeholder:text-white/30 transition-colors focus:border-accent focus:outline-none"
                   />
                 </div>
+
+                {error && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm leading-relaxed text-red-200"
+                  >
+                    {error}
+                  </p>
+                )}
 
                 <button
                   type="submit"
